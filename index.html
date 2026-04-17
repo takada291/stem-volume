@@ -22,15 +22,16 @@
     
     /* 設定画面用 */
     #settings-view { display: none; }
-    .settings-group { background: white; padding: 10px; margin-bottom: 10px; border-radius: 4px; border: 1px solid #dee2e6; }
+    .settings-group { background: white; padding: 10px; margin-bottom: 15px; border-radius: 4px; border: 1px solid #dee2e6; }
     .settings-group label { display: block; margin-bottom: 5px; font-size: 0.9rem; }
     .settings-group input { width: 100%; margin-bottom: 10px; }
+    .sp-name-input { font-weight: bold; color: #0056b3; background-color: #f0f8ff; border: 1px solid #b8daff; }
   </style>
 </head>
 <body>
 
   <div id="main-view">
-    <h2>立木材積計算 (100m²) <button class="btn btn-secondary" onclick="toggleView('settings-view')">設定 ⚙️</button></h2>
+    <h2>立木材積計算 (100m²) v1.0 <button class="btn btn-secondary" onclick="toggleView('settings-view')">設定 ⚙️</button></h2>
     
     <table>
       <thead>
@@ -71,7 +72,7 @@
 
   <div id="settings-view">
     <h2>計算式パラメータ設定 <button class="btn" onclick="saveSettings()">戻る / 保存</button></h2>
-    <p style="font-size: 0.8rem; color: #666;">V = 10^(A + B*log10(D) + C*log10(H))</p>
+    <p style="font-size: 0.8rem; color: #666;">V = 10^(A + B*log10(D) + C*log10(H))<br>樹種名も地域に合わせて変更可能です。</p>
     <div id="settings-container"></div>
   </div>
 
@@ -79,14 +80,26 @@
   <datalist id="height-list"></datalist>
 
   <script>
-    // デフォルトパラメータ（福井県設定）
-    const defaultParams = {
-      "スギ": { A: -4.1921, B: 1.82696, C: 0.99227 },
-      "ヒノキ": { A: -4.3110, B: 1.83546, C: 1.10655 },
-      "他針": { A: -4.0974, B: 1.871126, C: 0.863667 }
-    };
+    // デフォルトパラメータ（福井県設定をベースとする）
+    const defaultParams = [
+      { name: "スギ", A: -4.1921, B: 1.82696, C: 0.99227 },
+      { name: "ヒノキ", A: -4.3110, B: 1.83546, C: 1.10655 },
+      { name: "他針", A: -4.0974, B: 1.871126, C: 0.863667 }
+    ];
 
-    let currentParams = JSON.parse(localStorage.getItem('stemVolumeParams')) || defaultParams;
+    let currentParams;
+    
+    // データ構造を変更したため、キー名を V2 として新設（古いデータとの競合を避ける）
+    try {
+      const stored = JSON.parse(localStorage.getItem('stemVolumeSettingsV2'));
+      if (stored && Array.isArray(stored)) {
+        currentParams = stored;
+      } else {
+        currentParams = JSON.parse(JSON.stringify(defaultParams));
+      }
+    } catch(e) {
+      currentParams = JSON.parse(JSON.stringify(defaultParams));
+    }
 
     // 初期化処理
     function init() {
@@ -113,10 +126,7 @@
             <td>${i}</td>
             <td>
               <select id="sp-${i}" onchange="calculate()">
-                <option value="スギ">スギ</option>
-                <option value="ヒノキ">ヒノキ</option>
-                <option value="他針">他針</option>
-              </select>
+                </select>
             </td>
             <td><input type="number" id="d-${i}" list="dbh-list" step="0.1" oninput="calculate()"></td>
             <td><input type="number" id="h-${i}" list="height-list" step="0.1" oninput="calculate()"></td>
@@ -125,7 +135,32 @@
         `);
       }
 
+      updateSelectOptions();
       renderSettings();
+    }
+
+    // メイン画面の樹種プルダウンを現在の設定に基づいて更新する
+    function updateSelectOptions() {
+      for(let i = 1; i <= 10; i++) {
+        const select = document.getElementById(`sp-${i}`);
+        const currentValue = select.value; // 更新前の選択状態を保持
+        
+        select.innerHTML = ''; // 一旦クリア
+        
+        currentParams.forEach((param, index) => {
+          const option = document.createElement('option');
+          option.value = index;
+          option.textContent = param.name;
+          select.appendChild(option);
+        });
+
+        // 以前の選択状態を復元（存在しない場合は0番目を選択）
+        if (currentValue && currentParams[currentValue]) {
+          select.value = currentValue;
+        } else {
+          select.value = 0;
+        }
+      }
     }
 
     // 計算処理
@@ -133,16 +168,16 @@
       let totalVolume = 0;
 
       for(let i = 1; i <= 10; i++) {
-        const sp = document.getElementById(`sp-${i}`).value;
+        const spIndex = document.getElementById(`sp-${i}`).value;
         const d = parseFloat(document.getElementById(`d-${i}`).value);
         const h = parseFloat(document.getElementById(`h-${i}`).value);
         const vCell = document.getElementById(`v-${i}`);
 
         if(d > 0 && h > 0) {
-          const p = currentParams[sp];
-          // Excelと同様に対数式で計算
+          const p = currentParams[spIndex];
+          // 対数式で計算
           const vol = Math.pow(10, p.A + p.B * Math.log10(d) + p.C * Math.log10(h));
-          // 小数点第3位で切り捨て (ROUNDDOWN)
+          // 小数点第3位で切り捨て
           const roundedVol = Math.floor(vol * 1000) / 1000;
           vCell.textContent = roundedVol.toFixed(3);
           totalVolume += roundedVol;
@@ -158,7 +193,7 @@
       document.getElementById('ha-vol').textContent = haVolume.toFixed(1);
 
       const yieldRate = parseInt(document.getElementById('yield-rate').value) / 100;
-      const logVolume = Math.round(haVolume * yieldRate); // 素材材積は四捨五入して整数に
+      const logVolume = Math.round(haVolume * yieldRate);
       document.getElementById('log-vol').textContent = logVolume;
     }
 
@@ -172,33 +207,40 @@
     function renderSettings() {
       const container = document.getElementById('settings-container');
       container.innerHTML = '';
-      for(const [sp, params] of Object.entries(currentParams)) {
+      currentParams.forEach((param, index) => {
         container.insertAdjacentHTML('beforeend', `
           <div class="settings-group">
-            <strong>${sp}</strong>
-            <label>A (定数): <input type="number" id="set-${sp}-a" value="${params.A}" step="0.000001"></label>
-            <label>B (胸高直径係数): <input type="number" id="set-${sp}-b" value="${params.B}" step="0.000001"></label>
-            <label>C (樹高係数): <input type="number" id="set-${sp}-c" value="${params.C}" step="0.000001"></label>
+            <label>樹種名 (変更可): <input type="text" id="set-name-${index}" class="sp-name-input" value="${param.name}"></label>
+            <label>A (定数): <input type="number" id="set-a-${index}" value="${param.A}" step="0.000001"></label>
+            <label>B (胸高直径係数): <input type="number" id="set-b-${index}" value="${param.B}" step="0.000001"></label>
+            <label>C (樹高係数): <input type="number" id="set-c-${index}" value="${param.C}" step="0.000001"></label>
           </div>
         `);
-      }
+      });
     }
 
     // 設定の保存
     function saveSettings() {
-      for(const sp of Object.keys(currentParams)) {
-        currentParams[sp].A = parseFloat(document.getElementById(`set-${sp}-a`).value);
-        currentParams[sp].B = parseFloat(document.getElementById(`set-${sp}-b`).value);
-        currentParams[sp].C = parseFloat(document.getElementById(`set-${sp}-c`).value);
-      }
-      localStorage.setItem('stemVolumeParams', JSON.stringify(currentParams));
-      calculate(); // 再計算
+      currentParams.forEach((param, index) => {
+        // 空白で保存されるのを防ぐため、未入力時はデフォルト名を付与
+        param.name = document.getElementById(`set-name-${index}`).value || `樹種${index + 1}`;
+        param.A = parseFloat(document.getElementById(`set-a-${index}`).value);
+        param.B = parseFloat(document.getElementById(`set-b-${index}`).value);
+        param.C = parseFloat(document.getElementById(`set-c-${index}`).value);
+      });
+      
+      // ローカルストレージに保存
+      localStorage.setItem('stemVolumeSettingsV2', JSON.stringify(currentParams));
+      
+      // メイン画面のプルダウンと計算を更新
+      updateSelectOptions();
+      calculate(); 
       toggleView('main-view');
     }
 
     // PWA Service Worker の登録
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('sw.js').then(reg => console.log('SW registered!', reg)).catch(err => console.log('SW failed', err));
+      navigator.serviceWorker.register('sw.js').then(reg => console.log('SW registered!')).catch(err => console.log('SW failed', err));
     }
 
     window.onload = init;
