@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>立木材積</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="wood_maruta.png">
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 10px; background-color: #f8f9fa; color: #333; }
+    h2 { font-size: 1.2rem; margin: 0 0 10px 0; display: flex; justify-content: space-between; align-items: center; }
+    .btn { background-color: #28a745; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-size: 0.9rem; }
+    .btn-secondary { background-color: #6c757d; }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 15px; background: white; font-size: 0.9rem; }
+    th, td { border: 1px solid #dee2e6; padding: 6px 2px; text-align: center; }
+    th { background-color: #e9ecef; }
+    input, select { width: 90%; box-sizing: border-box; padding: 4px; font-size: 1rem; }
+    .result-table { width: 100%; font-size: 1rem; font-weight: bold; background: white; border-collapse: collapse; }
+    .result-table td { padding: 8px; border: 1px solid #dee2e6; }
+    .result-table .label { background-color: #e9ecef; width: 60%; }
+    .result-table .value { text-align: right; width: 40%; }
+    
+    /* 設定画面用 */
+    #settings-view { display: none; }
+    .settings-group { background: white; padding: 10px; margin-bottom: 10px; border-radius: 4px; border: 1px solid #dee2e6; }
+    .settings-group label { display: block; margin-bottom: 5px; font-size: 0.9rem; }
+    .settings-group input { width: 100%; margin-bottom: 10px; }
+  </style>
+</head>
+<body>
+
+  <div id="main-view">
+    <h2>立木材積計算 (100m²) <button class="btn btn-secondary" onclick="toggleView('settings-view')">設定 ⚙️</button></h2>
+    
+    <table>
+      <thead>
+        <tr>
+          <th style="width:10%">No</th>
+          <th style="width:30%">樹種</th>
+          <th style="width:25%">胸高直径<br>(cm)</th>
+          <th style="width:20%">樹高<br>(m)</th>
+          <th style="width:15%">材積<br>(m³)</th>
+        </tr>
+      </thead>
+      <tbody id="tree-list">
+        </tbody>
+    </table>
+
+    <table class="result-table">
+      <tr>
+        <td class="label">計 (100m²当り)</td>
+        <td class="value"><span id="total-vol">0.000</span> m³</td>
+      </tr>
+      <tr>
+        <td class="label">立木材積 (1ha当り)</td>
+        <td class="value"><span id="ha-vol">0.0</span> m³</td>
+      </tr>
+      <tr>
+        <td class="label">歩留り (%)</td>
+        <td class="value">
+          <select id="yield-rate" onchange="calculate()">
+            </select>
+        </td>
+      </tr>
+      <tr>
+        <td class="label" style="color: #d9534f;">素材材積 (1ha当り)</td>
+        <td class="value" style="color: #d9534f;"><span id="log-vol">0</span> m³</td>
+      </tr>
+    </table>
+  </div>
+
+  <div id="settings-view">
+    <h2>計算式パラメータ設定 <button class="btn" onclick="saveSettings()">戻る / 保存</button></h2>
+    <p style="font-size: 0.8rem; color: #666;">V = 10^(A + B*log10(D) + C*log10(H))</p>
+    <div id="settings-container"></div>
+  </div>
+
+  <datalist id="dbh-list"></datalist>
+  <datalist id="height-list"></datalist>
+
+  <script>
+    // デフォルトパラメータ（福井県設定）
+    const defaultParams = {
+      "スギ": { A: -4.1921, B: 1.82696, C: 0.99227 },
+      "ヒノキ": { A: -4.3110, B: 1.83546, C: 1.10655 },
+      "他針": { A: -4.0974, B: 1.871126, C: 0.863667 }
+    };
+
+    let currentParams = JSON.parse(localStorage.getItem('stemVolumeParams')) || defaultParams;
+
+    // 初期化処理
+    function init() {
+      // Datalist生成 (胸高直径 20-80 2cm刻み)
+      const dbhList = document.getElementById('dbh-list');
+      for(let i = 20; i <= 80; i+=2) dbhList.insertAdjacentHTML('beforeend', `<option value="${i}">`);
+      
+      // Datalist生成 (樹高 15-35 1m刻み)
+      const hList = document.getElementById('height-list');
+      for(let i = 15; i <= 35; i++) hList.insertAdjacentHTML('beforeend', `<option value="${i}">`);
+
+      // 歩留りプルダウン生成 (50-100 5%刻み)
+      const yieldSelect = document.getElementById('yield-rate');
+      for(let i = 50; i <= 100; i+=5) {
+        let selected = (i === 75) ? 'selected' : ''; // 初期値75%
+        yieldSelect.insertAdjacentHTML('beforeend', `<option value="${i}" ${selected}>${i}%</option>`);
+      }
+
+      // 入力行を10行生成
+      const tbody = document.getElementById('tree-list');
+      for(let i = 1; i <= 10; i++) {
+        tbody.insertAdjacentHTML('beforeend', `
+          <tr>
+            <td>${i}</td>
+            <td>
+              <select id="sp-${i}" onchange="calculate()">
+                <option value="スギ">スギ</option>
+                <option value="ヒノキ">ヒノキ</option>
+                <option value="他針">他針</option>
+              </select>
+            </td>
+            <td><input type="number" id="d-${i}" list="dbh-list" step="0.1" oninput="calculate()"></td>
+            <td><input type="number" id="h-${i}" list="height-list" step="0.1" oninput="calculate()"></td>
+            <td id="v-${i}">-</td>
+          </tr>
+        `);
+      }
+
+      renderSettings();
+    }
+
+    // 計算処理
+    function calculate() {
+      let totalVolume = 0;
+
+      for(let i = 1; i <= 10; i++) {
+        const sp = document.getElementById(`sp-${i}`).value;
+        const d = parseFloat(document.getElementById(`d-${i}`).value);
+        const h = parseFloat(document.getElementById(`h-${i}`).value);
+        const vCell = document.getElementById(`v-${i}`);
+
+        if(d > 0 && h > 0) {
+          const p = currentParams[sp];
+          // Excelと同様に対数式で計算
+          const vol = Math.pow(10, p.A + p.B * Math.log10(d) + p.C * Math.log10(h));
+          // 小数点第3位で切り捨て (ROUNDDOWN)
+          const roundedVol = Math.floor(vol * 1000) / 1000;
+          vCell.textContent = roundedVol.toFixed(3);
+          totalVolume += roundedVol;
+        } else {
+          vCell.textContent = '-';
+        }
+      }
+
+      // 計測結果の更新
+      document.getElementById('total-vol').textContent = totalVolume.toFixed(3);
+      
+      const haVolume = totalVolume * 100;
+      document.getElementById('ha-vol').textContent = haVolume.toFixed(1);
+
+      const yieldRate = parseInt(document.getElementById('yield-rate').value) / 100;
+      const logVolume = Math.round(haVolume * yieldRate); // 素材材積は四捨五入して整数に
+      document.getElementById('log-vol').textContent = logVolume;
+    }
+
+    // 画面切り替え
+    function toggleView(viewId) {
+      document.getElementById('main-view').style.display = viewId === 'main-view' ? 'block' : 'none';
+      document.getElementById('settings-view').style.display = viewId === 'settings-view' ? 'block' : 'none';
+    }
+
+    // 設定画面の描画
+    function renderSettings() {
+      const container = document.getElementById('settings-container');
+      container.innerHTML = '';
+      for(const [sp, params] of Object.entries(currentParams)) {
+        container.insertAdjacentHTML('beforeend', `
+          <div class="settings-group">
+            <strong>${sp}</strong>
+            <label>A (定数): <input type="number" id="set-${sp}-a" value="${params.A}" step="0.000001"></label>
+            <label>B (胸高直径係数): <input type="number" id="set-${sp}-b" value="${params.B}" step="0.000001"></label>
+            <label>C (樹高係数): <input type="number" id="set-${sp}-c" value="${params.C}" step="0.000001"></label>
+          </div>
+        `);
+      }
+    }
+
+    // 設定の保存
+    function saveSettings() {
+      for(const sp of Object.keys(currentParams)) {
+        currentParams[sp].A = parseFloat(document.getElementById(`set-${sp}-a`).value);
+        currentParams[sp].B = parseFloat(document.getElementById(`set-${sp}-b`).value);
+        currentParams[sp].C = parseFloat(document.getElementById(`set-${sp}-c`).value);
+      }
+      localStorage.setItem('stemVolumeParams', JSON.stringify(currentParams));
+      calculate(); // 再計算
+      toggleView('main-view');
+    }
+
+    // PWA Service Worker の登録
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js').then(reg => console.log('SW registered!', reg)).catch(err => console.log('SW failed', err));
+    }
+
+    window.onload = init;
+  </script>
+</body>
+</html>
