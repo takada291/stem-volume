@@ -6,33 +6,55 @@
   <title>立木材積</title>
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="wood_maruta.png">
+  <!-- JSZipの読み込み -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 10px; background-color: #f8f9fa; color: #333; }
     h2 { font-size: 1.2rem; margin: 0 0 10px 0; display: flex; justify-content: space-between; align-items: center; }
     .btn { background-color: #28a745; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-size: 0.9rem; }
     .btn-secondary { background-color: #6c757d; }
+    .btn-primary { background-color: #007bff; width: 100%; margin-bottom: 15px; padding: 10px; font-weight: bold; }
     table { width: 100%; border-collapse: collapse; margin-bottom: 15px; background: white; font-size: 0.9rem; }
     th, td { border: 1px solid #dee2e6; padding: 6px 2px; text-align: center; }
     th { background-color: #e9ecef; }
-    input, select { width: 90%; box-sizing: border-box; padding: 4px; font-size: 1rem; }
+    input[type="number"]:not(.map-input), select { width: 90%; box-sizing: border-box; padding: 4px; font-size: 1rem; }
     .result-table { width: 100%; font-size: 1rem; font-weight: bold; background: white; border-collapse: collapse; }
     .result-table td { padding: 8px; border: 1px solid #dee2e6; }
     .result-table .label { background-color: #e9ecef; width: 60%; }
     .result-table .value { text-align: right; width: 40%; }
     
+    /* ビュー切り替え用 */
+    #settings-view, #import-view { display: none; }
+    
     /* 設定画面用 */
-    #settings-view { display: none; }
     .settings-group { background: white; padding: 10px; margin-bottom: 15px; border-radius: 4px; border: 1px solid #dee2e6; }
     .settings-group label { display: block; margin-bottom: 5px; font-size: 0.9rem; }
-    .settings-group input { width: 100%; margin-bottom: 10px; }
+    .settings-group input { width: 100%; margin-bottom: 10px; box-sizing: border-box; padding: 4px;}
     .sp-name-input { font-weight: bold; color: #0056b3; background-color: #f0f8ff; border: 1px solid #b8daff; }
+
+    /* 3Dインポート画面用 */
+    .import-card { background: #fff; padding: 15px; border-radius: 8px; border: 1px solid #dee2e6; margin-bottom: 10px; }
+    .settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
+    .setting-group { display: flex; flex-direction: column; font-size: 0.85rem;}
+    .setting-group input, .setting-group select { padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 0.9rem; }
+    .full-width { grid-column: 1 / -1; }
+    canvas { border: 1px solid #bdc3c7; background-color: #ffffff; width: 100%; height: auto; border-radius: 4px; cursor: crosshair; }
+    #loading { display: none; color: #d9534f; font-weight: bold; text-align: center; margin: 10px 0; }
+    .summary { font-size: 1rem; font-weight: bold; margin-bottom: 10px; color: #2c3e50; }
+    .plot-info { color: #28a745; display: block; margin-top: 5px; }
+    .flex-btns { display: flex; gap: 10px; margin-top: 15px; }
+    .flex-btns .btn { flex: 1; }
   </style>
 </head>
 <body>
 
+  <!-- メイン画面 -->
   <div id="main-view">
-    <h2>立木材積計算 (100m²) v1.0 <button class="btn btn-secondary" onclick="toggleView('settings-view')">設定 ⚙️</button></h2>
+    <h2>立木材積計算 (100m²) v1.1<button class="btn btn-secondary" onclick="toggleView('settings-view')">設定 ⚙️</button></h2>
     
+    <!-- 新設：3Dデータ取り込みボタン -->
+    <button class="btn btn-primary" onclick="toggleView('import-view')">📡 3Dデータから胸高直径を取り込む</button>
+
     <table>
       <thead>
         <tr>
@@ -44,43 +66,72 @@
         </tr>
       </thead>
       <tbody id="tree-list">
-        </tbody>
+        <!-- JSで10行生成 -->
+      </tbody>
     </table>
 
     <table class="result-table">
-      <tr>
-        <td class="label">計 (100m²当り)</td>
-        <td class="value"><span id="total-vol">0.000</span> m³</td>
-      </tr>
-      <tr>
-        <td class="label">立木材積 (1ha当り)</td>
-        <td class="value"><span id="ha-vol">0.0</span> m³</td>
-      </tr>
-      <tr>
-        <td class="label">歩留り (%)</td>
-        <td class="value">
-          <select id="yield-rate" onchange="calculate()">
-            </select>
-        </td>
-      </tr>
-      <tr>
-        <td class="label" style="color: #d9534f;">素材材積 (1ha当り)</td>
-        <td class="value" style="color: #d9534f;"><span id="log-vol">0</span> m³</td>
-      </tr>
+      <tr><td class="label">計 (100m²当り)</td><td class="value"><span id="total-vol">0.000</span> m³</td></tr>
+      <tr><td class="label">立木材積 (1ha当り)</td><td class="value"><span id="ha-vol">0.0</span> m³</td></tr>
+      <tr><td class="label">歩留り (%)</td><td class="value"><select id="yield-rate" onchange="calculate()"></select></td></tr>
+      <tr><td class="label" style="color: #d9534f;">素材材積 (1ha当り)</td><td class="value" style="color: #d9534f;"><span id="log-vol">0</span> m³</td></tr>
     </table>
   </div>
 
+  <!-- 設定画面 -->
   <div id="settings-view">
     <h2>計算式パラメータ設定 <button class="btn" onclick="saveSettings()">戻る / 保存</button></h2>
-    <p style="font-size: 0.8rem; color: #666;">V = 10^(A + B*log10(D) + C*log10(H))<br>樹種名も地域に合わせて変更可能です。</p>
+    <p style="font-size: 0.8rem; color: #666;">V = 10^(A + B*log10(D) + C*log10(H))</p>
     <div id="settings-container"></div>
   </div>
 
+  <!-- 3Dインポート画面 -->
+  <div id="import-view">
+    <h2>胸高直径の自動抽出</h2>
+    <div class="import-card">
+      <div class="settings-grid">
+        <div class="setting-group full-width">
+          <label for="fileInput">データ読込 (.zip, .obj, .csv):</label>
+          <input type="file" id="fileInput" accept=".zip, .csv, .obj">
+        </div>
+        <div class="setting-group">
+          <label for="axisSelect">高さの軸設定:</label>
+          <select id="axisSelect">
+            <option value="y" selected>Y軸 (スマホ等)</option>
+            <option value="z">Z軸 (測量系)</option>
+          </select>
+        </div>
+        <div class="setting-group">
+          <label for="distThreshold">立木間隔(m):</label>
+          <input type="number" id="distThreshold" class="map-input" value="1.0" step="0.1" min="0.1">
+        </div>
+      </div>
+      <!-- 詳細設定は隠しパラメータ化しても良いですが、今回はそのまま残します -->
+      <input type="hidden" id="meshSize" value="0.5">
+      <input type="hidden" id="minDbh" value="10.0">
+      <input type="hidden" id="maxDbh" value="90.0">
+
+      <div id="loading">データを解析中...</div>
+      
+      <div id="resultArea" style="display: none;">
+        <div class="summary" id="summaryText"></div>
+        <canvas id="mapCanvas" width="800" height="800"></canvas>
+        <div class="flex-btns">
+          <button class="btn btn-secondary" onclick="toggleView('main-view')">キャンセル</button>
+          <button class="btn" onclick="applyDbhData()">メイン画面へ反映 (OK)</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 入力候補 -->
   <datalist id="dbh-list"></datalist>
   <datalist id="height-list"></datalist>
 
   <script>
-    // デフォルトパラメータ（福井県設定をベースとする）
+    /* ==========================================
+       1. メインアプリのロジック (従来通り)
+       ========================================== */
     const defaultParams = [
       { name: "スギ", A: -4.1921, B: 1.82696, C: 0.99227 },
       { name: "ヒノキ", A: -4.3110, B: 1.83546, C: 1.10655 },
@@ -88,85 +139,57 @@
     ];
 
     let currentParams;
-    
-    // データ構造を変更したため、キー名を V2 として新設（古いデータとの競合を避ける）
     try {
       const stored = JSON.parse(localStorage.getItem('stemVolumeSettingsV2'));
-      if (stored && Array.isArray(stored)) {
-        currentParams = stored;
-      } else {
-        currentParams = JSON.parse(JSON.stringify(defaultParams));
-      }
+      currentParams = (stored && Array.isArray(stored)) ? stored : JSON.parse(JSON.stringify(defaultParams));
     } catch(e) {
       currentParams = JSON.parse(JSON.stringify(defaultParams));
     }
 
-    // 初期化処理
     function init() {
-      // Datalist生成 (胸高直径 20-80 2cm刻み)
       const dbhList = document.getElementById('dbh-list');
       for(let i = 20; i <= 80; i+=2) dbhList.insertAdjacentHTML('beforeend', `<option value="${i}">`);
       
-      // Datalist生成 (樹高 15-35 1m刻み)
       const hList = document.getElementById('height-list');
       for(let i = 15; i <= 35; i++) hList.insertAdjacentHTML('beforeend', `<option value="${i}">`);
 
-      // 歩留りプルダウン生成 (50-100 5%刻み)
       const yieldSelect = document.getElementById('yield-rate');
       for(let i = 50; i <= 100; i+=5) {
-        let selected = (i === 75) ? 'selected' : ''; // 初期値75%
+        let selected = (i === 75) ? 'selected' : '';
         yieldSelect.insertAdjacentHTML('beforeend', `<option value="${i}" ${selected}>${i}%</option>`);
       }
 
-      // 入力行を10行生成
       const tbody = document.getElementById('tree-list');
       for(let i = 1; i <= 10; i++) {
         tbody.insertAdjacentHTML('beforeend', `
           <tr>
             <td>${i}</td>
-            <td>
-              <select id="sp-${i}" onchange="calculate()">
-                </select>
-            </td>
+            <td><select id="sp-${i}" onchange="calculate()"></select></td>
             <td><input type="number" id="d-${i}" list="dbh-list" step="0.1" oninput="calculate()"></td>
             <td><input type="number" id="h-${i}" list="height-list" step="0.1" oninput="calculate()"></td>
             <td id="v-${i}">-</td>
           </tr>
         `);
       }
-
       updateSelectOptions();
       renderSettings();
     }
 
-    // メイン画面の樹種プルダウンを現在の設定に基づいて更新する
     function updateSelectOptions() {
       for(let i = 1; i <= 10; i++) {
         const select = document.getElementById(`sp-${i}`);
-        const currentValue = select.value; // 更新前の選択状態を保持
-        
-        select.innerHTML = ''; // 一旦クリア
-        
+        const currentValue = select.value;
+        select.innerHTML = '';
         currentParams.forEach((param, index) => {
           const option = document.createElement('option');
-          option.value = index;
-          option.textContent = param.name;
-          select.appendChild(option);
+          option.value = index; option.textContent = param.name; select.appendChild(option);
         });
-
-        // 以前の選択状態を復元（存在しない場合は0番目を選択）
-        if (currentValue && currentParams[currentValue]) {
-          select.value = currentValue;
-        } else {
-          select.value = 0;
-        }
+        select.value = (currentValue && currentParams[currentValue]) ? currentValue : 0;
       }
     }
 
-    // 計算処理
     function calculate() {
       let totalVolume = 0;
-
       for(let i = 1; i <= 10; i++) {
         const spIndex = document.getElementById(`sp-${i}`).value;
         const d = parseFloat(document.getElementById(`d-${i}`).value);
@@ -175,9 +198,7 @@
 
         if(d > 0 && h > 0) {
           const p = currentParams[spIndex];
-          // 対数式で計算
           const vol = Math.pow(10, p.A + p.B * Math.log10(d) + p.C * Math.log10(h));
-          // 小数点第3位で切り捨て
           const roundedVol = Math.floor(vol * 1000) / 1000;
           vCell.textContent = roundedVol.toFixed(3);
           totalVolume += roundedVol;
@@ -185,64 +206,275 @@
           vCell.textContent = '-';
         }
       }
-
-      // 計測結果の更新
       document.getElementById('total-vol').textContent = totalVolume.toFixed(3);
-      
       const haVolume = totalVolume * 100;
       document.getElementById('ha-vol').textContent = haVolume.toFixed(1);
-
       const yieldRate = parseInt(document.getElementById('yield-rate').value) / 100;
-      const logVolume = Math.round(haVolume * yieldRate);
-      document.getElementById('log-vol').textContent = logVolume;
+      document.getElementById('log-vol').textContent = Math.round(haVolume * yieldRate);
     }
 
-    // 画面切り替え
     function toggleView(viewId) {
       document.getElementById('main-view').style.display = viewId === 'main-view' ? 'block' : 'none';
       document.getElementById('settings-view').style.display = viewId === 'settings-view' ? 'block' : 'none';
+      document.getElementById('import-view').style.display = viewId === 'import-view' ? 'block' : 'none';
     }
 
-    // 設定画面の描画
     function renderSettings() {
       const container = document.getElementById('settings-container');
       container.innerHTML = '';
       currentParams.forEach((param, index) => {
         container.insertAdjacentHTML('beforeend', `
           <div class="settings-group">
-            <label>樹種名 (変更可): <input type="text" id="set-name-${index}" class="sp-name-input" value="${param.name}"></label>
-            <label>A (定数): <input type="number" id="set-a-${index}" value="${param.A}" step="0.000001"></label>
-            <label>B (胸高直径係数): <input type="number" id="set-b-${index}" value="${param.B}" step="0.000001"></label>
-            <label>C (樹高係数): <input type="number" id="set-c-${index}" value="${param.C}" step="0.000001"></label>
+            <label>樹種名: <input type="text" id="set-name-${index}" class="sp-name-input" value="${param.name}"></label>
+            <label>A: <input type="number" id="set-a-${index}" value="${param.A}" step="0.000001"></label>
+            <label>B: <input type="number" id="set-b-${index}" value="${param.B}" step="0.000001"></label>
+            <label>C: <input type="number" id="set-c-${index}" value="${param.C}" step="0.000001"></label>
           </div>
         `);
       });
     }
 
-    // 設定の保存
     function saveSettings() {
       currentParams.forEach((param, index) => {
-        // 空白で保存されるのを防ぐため、未入力時はデフォルト名を付与
         param.name = document.getElementById(`set-name-${index}`).value || `樹種${index + 1}`;
         param.A = parseFloat(document.getElementById(`set-a-${index}`).value);
         param.B = parseFloat(document.getElementById(`set-b-${index}`).value);
         param.C = parseFloat(document.getElementById(`set-c-${index}`).value);
       });
-      
-      // ローカルストレージに保存
       localStorage.setItem('stemVolumeSettingsV2', JSON.stringify(currentParams));
+      updateSelectOptions(); calculate(); toggleView('main-view');
+    }
+
+    /* ==========================================
+       2. 3Dマップ・DBH抽出のロジック
+       ========================================== */
+    let currentTrees = [];
+    let mapParams = { scale: 1, offsetX: 0, offsetY: 0 };
+    const PLOT_RADIUS = 5.64;
+
+    document.getElementById('fileInput').addEventListener('change', async function(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      document.getElementById('resultArea').style.display = 'none';
+      document.getElementById('loading').style.display = 'block';
+      currentTrees = [];
+      const ext = file.name.split('.').pop().toLowerCase();
+
+      try {
+        await new Promise(r => setTimeout(r, 50));
+        if (ext === 'zip') await processZip(file);
+        else {
+          const text = await new Promise((res, rej) => {
+            const reader = new FileReader();
+            reader.onload = e => res(e.target.result);
+            reader.onerror = e => rej(new Error("読込失敗"));
+            reader.readAsText(file);
+          });
+          processData(text, ext);
+        }
+      } catch (error) {
+        alert("エラー: " + error.message);
+      } finally {
+        document.getElementById('loading').style.display = 'none';
+      }
+    });
+
+    async function processZip(zipFile) {
+      if(typeof JSZip === 'undefined') throw new Error("JSZipライブラリが読み込まれていません。通信環境を確認してください。");
+      const zip = new JSZip();
+      const contents = await zip.loadAsync(zipFile);
+      let found = false;
+      for (const filename of Object.keys(contents.files)) {
+        if (contents.files[filename].dir) continue;
+        const ext = filename.split('.').pop().toLowerCase();
+        if ((ext === 'obj' || ext === 'csv') && !filename.includes('__MACOSX') && !filename.startsWith('.')) {
+          found = true;
+          const data = await contents.file(filename).async("string");
+          processData(data, ext);
+          break; 
+        }
+      }
+      if (!found) throw new Error("有効なファイルなし");
+    }
+
+    function processData(text, extension) {
+      const lines = text.split('\n');
+      const points = [];
+      for (let line of lines) {
+        line = line.trim();
+        if (!line) continue;
+        if (extension === 'csv') {
+          const parts = line.split(',');
+          if (parts.length >= 3) {
+            const x = parseFloat(parts[0]), y = parseFloat(parts[1]), z = parseFloat(parts[2]);
+            if (!isNaN(x) && !isNaN(y) && !isNaN(z)) points.push({x, y, z});
+          }
+        } else if (extension === 'obj' && line.startsWith('v ')) {
+          const parts = line.split(/\s+/);
+          if (parts.length >= 4) {
+            const x = parseFloat(parts[1]), y = parseFloat(parts[2]), z = parseFloat(parts[3]);
+            if (!isNaN(x) && !isNaN(y) && !isNaN(z)) points.push({x, y, z});
+          }
+        }
+      }
+      if (points.length === 0) throw new Error("データが空");
+
+      const axis = document.getElementById('axisSelect').value;
+      const normalized = points.map(p => axis === 'z' ? { u: p.x, v: p.y, h: p.z } : { u: p.x, v: p.z, h: p.y });
+      const mesh = parseFloat(document.getElementById('meshSize').value);
+      const distThresh = parseFloat(document.getElementById('distThreshold').value);
+      const minDbh = parseFloat(document.getElementById('minDbh').value);
+      const maxDbh = parseFloat(document.getElementById('maxDbh').value);
+
+      const grid = new Map();
+      for (let p of normalized) {
+        const gu = Math.floor(p.u / mesh), gv = Math.floor(p.v / mesh), key = `${gu},${gv}`;
+        if (!grid.has(key) || p.h < grid.get(key)) grid.set(key, p.h);
+      }
+
+      const slices = [];
+      for (let p of normalized) {
+        const gu = Math.floor(p.u / mesh), gv = Math.floor(p.v / mesh);
+        let localH = Infinity;
+        for (let du = -1; du <= 1; du++) {
+          for (let dv = -1; dv <= 1; dv++) {
+            const key = `${gu + du},${gv + dv}`;
+            if (grid.has(key)) localH = Math.min(localH, grid.get(key));
+          }
+        }
+        if (localH !== Infinity) {
+          const relH = p.h - localH;
+          if (relH >= 1.15 && relH <= 1.25) slices.push(p);
+        }
+      }
+
+      if (slices.length < 3) throw new Error("1.2m高のデータ不足");
+
+      let unassigned = [...slices], clusters = [];
+      while (unassigned.length > 0) {
+        let c = [unassigned.pop()], i = 0;
+        while (i < c.length) {
+          for (let j = unassigned.length - 1; j >= 0; j--) {
+            if (Math.hypot(c[i].u - unassigned[j].u, c[i].v - unassigned[j].v) <= distThresh) {
+              c.push(unassigned[j]); unassigned.splice(j, 1);
+            }
+          }
+          i++;
+        }
+        if (c.length > 10) clusters.push(c);
+      }
+
+      clusters.forEach((cluster) => {
+        const N = cluster.length;
+        let sumU = 0, sumV = 0;
+        for (let p of cluster) { sumU += p.u; sumV += p.v; }
+        const meanU = sumU / N, meanV = sumV / N;
+        let Suu = 0, Svv = 0, Suv = 0, Suuu = 0, Svvv = 0, Suuv = 0, Suvv = 0;
+        for (let p of cluster) {
+          let u = p.u - meanU, v = p.v - meanV;
+          Suu += u*u; Svv += v*v; Suv += u*v;
+          Suuu += u*u*u; Svvv += v*v*v; Suuv += u*u*v; Suvv += u*v*v;
+        }
+        const h1 = 0.5 * (Suuu + Suvv), h2 = 0.5 * (Svvv + Suuv), D = Suu * Svv - Suv * Suv;
+        if (Math.abs(D) < 1e-8) return;
+        const uc = (h1 * Svv - h2 * Suv) / D, vc = (Suu * h2 - Suv * h1) / D;
+        const radius = Math.sqrt(uc*uc + vc*vc + (Suu+Svv)/N);
+        const dbhCm = radius * 2 * 100;
+
+        if (dbhCm >= minDbh && dbhCm <= maxDbh) {
+          currentTrees.push({ id: currentTrees.length + 1, x: uc + meanU, y: vc + meanV, dbh: dbhCm, isInsidePlot: false });
+        }
+      });
+
+      document.getElementById('resultArea').style.display = 'block';
+      if (currentTrees.length === 0) return;
+
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+      currentTrees.forEach(t => {
+        if (t.x < minX) minX = t.x; if (t.x > maxX) maxX = t.x;
+        if (t.y < minY) minY = t.y; if (t.y > maxY) maxY = t.y;
+      });
+      if (maxX - minX < 5) { minX -= 2.5; maxX += 2.5; }
+      if (maxY - minY < 5) { minY -= 2.5; maxY += 2.5; }
+
+      const maxRange = Math.max(maxX - minX, maxY - minY) * 1.5;
+      const cvs = document.getElementById('mapCanvas');
+      mapParams.scale = cvs.width / maxRange;
+      mapParams.offsetX = cvs.width / 2 - ((maxX + minX) / 2) * mapParams.scale;
+      mapParams.offsetY = cvs.height / 2 - ((maxY + minY) / 2) * mapParams.scale;
+
+      drawMap(null);
+    }
+
+    document.getElementById('mapCanvas').addEventListener('mousedown', function(e) {
+      const rect = this.getBoundingClientRect();
+      const scaleX = this.width / rect.width, scaleY = this.height / rect.height;
+      const px = (e.clientX - rect.left) * scaleX, py = (e.clientY - rect.top) * scaleY;
+      drawMap({ u: (px - mapParams.offsetX) / mapParams.scale, v: (py - mapParams.offsetY) / mapParams.scale, px: px, py: py });
+    });
+
+    function drawMap(center) {
+      const cvs = document.getElementById('mapCanvas'), ctx = cvs.getContext('2d');
+      ctx.clearRect(0, 0, cvs.width, cvs.height);
+      let inside = 0;
+
+      if (center) {
+        ctx.beginPath(); ctx.arc(center.px, center.py, PLOT_RADIUS * mapParams.scale, 0, 2 * Math.PI);
+        ctx.fillStyle = 'rgba(46, 204, 113, 0.15)'; ctx.fill();
+        ctx.strokeStyle = '#27ae60'; ctx.setLineDash([5, 5]); ctx.lineWidth = 1.5; ctx.stroke(); ctx.setLineDash([]);
+        ctx.beginPath(); ctx.arc(center.px, center.py, 4, 0, 2 * Math.PI); ctx.fillStyle = '#e74c3c'; ctx.fill();
+      }
+
+      ctx.font = "bold 16px sans-serif"; ctx.textAlign = "center";
+      currentTrees.forEach(t => {
+        if (center) t.isInsidePlot = Math.hypot(t.x - center.u, t.y - center.v) <= PLOT_RADIUS;
+        if (t.isInsidePlot) inside++;
+
+        const px = t.x * mapParams.scale + mapParams.offsetX, py = t.y * mapParams.scale + mapParams.offsetY;
+        ctx.beginPath(); ctx.arc(px, py, 6, 0, 2 * Math.PI);
+        ctx.fillStyle = t.isInsidePlot ? '#27ae60' : '#bdc3c7'; ctx.fill();
+        ctx.strokeStyle = t.isInsidePlot ? '#2ecc71' : '#95a5a6'; ctx.lineWidth = 2; ctx.stroke();
+        ctx.fillStyle = t.isInsidePlot ? '#2c3e50' : '#7f8c8d'; ctx.fillText(`${t.dbh.toFixed(1)} cm`, px, py - 12);
+      });
+
+      const sumDiv = document.getElementById('summaryText');
+      if (center) sumDiv.innerHTML = `全体: ${currentTrees.length}本 <span class="plot-info">● プロット内抽出: ${inside}本 (OKで反映)</span>`;
+      else sumDiv.innerText = `検出: ${currentTrees.length}本 (画面をタップしてプロット円の中心を決定してください)`;
+    }
+
+    /* ==========================================
+       3. メイン画面へのデータ反映
+       ========================================== */
+    function applyDbhData() {
+      const plotTrees = currentTrees.filter(t => t.isInsidePlot);
+      if (plotTrees.length === 0) {
+        alert("プロット円内に立木がありません。円を配置し直してください。");
+        return;
+      }
+      if (plotTrees.length > 10) {
+        alert(`プロット内に${plotTrees.length}本の立木があります。上から10本分のみを反映します。`);
+      }
+
+      for (let i = 1; i <= 10; i++) {
+        const dInput = document.getElementById(`d-${i}`);
+        const hInput = document.getElementById(`h-${i}`);
+        
+        if (i <= plotTrees.length) {
+          dInput.value = plotTrees[i - 1].dbh.toFixed(1);
+        } else {
+          dInput.value = ''; // 10本未満の場合は空欄に
+        }
+        hInput.value = ''; // 樹高は必ずクリア
+      }
       
-      // メイン画面のプルダウンと計算を更新
-      updateSelectOptions();
-      calculate(); 
-      toggleView('main-view');
+      calculate(); // 再計算
+      toggleView('main-view'); // メイン画面へ戻る
     }
 
-    // PWA Service Worker の登録
+    // PWA Service Worker
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('sw.js').then(reg => console.log('SW registered!')).catch(err => console.log('SW failed', err));
+      navigator.serviceWorker.register('sw.js').then(reg => console.log('SW ok')).catch(err => console.log('SW err', err));
     }
-
     window.onload = init;
   </script>
 </body>
