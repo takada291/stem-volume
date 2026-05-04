@@ -50,10 +50,9 @@
 
   <!-- メイン画面 -->
   <div id="main-view">
-    <h2>立木材積計算 (100m²) v1.1<button class="btn btn-secondary" onclick="toggleView('settings-view')">設定 ⚙️</button></h2>
+    <h2>立木材積計算 (100m²) v1.2 <button class="btn btn-secondary" onclick="toggleView('settings-view')">設定 ⚙️</button></h2>
     
-    <!-- 新設：3Dデータ取り込みボタン -->
-    <button class="btn btn-primary" onclick="toggleView('import-view')">3Dデータから胸高直径を取り込む</button>
+    <button class="btn btn-primary" onclick="toggleView('import-view')">📡 3Dデータから胸高直径を取り込む</button>
 
     <table>
       <thead>
@@ -106,7 +105,6 @@
           <input type="number" id="distThreshold" class="map-input" value="1.0" step="0.1" min="0.1">
         </div>
       </div>
-      <!-- 詳細設定は隠しパラメータ化しても良いですが、今回はそのまま残します -->
       <input type="hidden" id="meshSize" value="0.5">
       <input type="hidden" id="minDbh" value="10.0">
       <input type="hidden" id="maxDbh" value="90.0">
@@ -130,7 +128,7 @@
 
   <script>
     /* ==========================================
-       1. メインアプリのロジック (従来通り)
+       1. メインアプリのロジック
        ========================================== */
     const defaultParams = [
       { name: "スギ", A: -4.1921, B: 1.82696, C: 0.99227 },
@@ -246,7 +244,7 @@
     }
 
     /* ==========================================
-       2. 3Dマップ・DBH抽出のロジック
+       2. 3Dマップ・DBH抽出のロジック (地盤高 平均値計算バージョン)
        ========================================== */
     let currentTrees = [];
     let mapParams = { scale: 1, offsetX: 0, offsetY: 0 };
@@ -335,15 +333,24 @@
       const slices = [];
       for (let p of normalized) {
         const gu = Math.floor(p.u / mesh), gv = Math.floor(p.v / mesh);
-        let localH = Infinity;
+        
+        // 【改良部分】周囲メッシュの地盤高の「平均値」を計算する
+        let sumLocalH = 0;
+        let countH = 0;
         for (let du = -1; du <= 1; du++) {
           for (let dv = -1; dv <= 1; dv++) {
             const key = `${gu + du},${gv + dv}`;
-            if (grid.has(key)) localH = Math.min(localH, grid.get(key));
+            if (grid.has(key)) {
+              sumLocalH += grid.get(key);
+              countH++;
+            }
           }
         }
-        if (localH !== Infinity) {
-          const relH = p.h - localH;
+        
+        if (countH > 0) {
+          const avgLocalH = sumLocalH / countH;
+          const relH = p.h - avgLocalH;
+          // 平均地盤高から1.15m〜1.25mのポイントをスライスとして抽出
           if (relH >= 1.15 && relH <= 1.25) slices.push(p);
         }
       }
@@ -462,13 +469,13 @@
         if (i <= plotTrees.length) {
           dInput.value = plotTrees[i - 1].dbh.toFixed(1);
         } else {
-          dInput.value = ''; // 10本未満の場合は空欄に
+          dInput.value = ''; 
         }
-        hInput.value = ''; // 樹高は必ずクリア
+        hInput.value = ''; 
       }
       
-      calculate(); // 再計算
-      toggleView('main-view'); // メイン画面へ戻る
+      calculate(); 
+      toggleView('main-view'); 
     }
 
     // PWA Service Worker
