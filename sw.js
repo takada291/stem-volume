@@ -1,4 +1,4 @@
-const CACHE_NAME = 'stem-volume-v1.1'; // バージョンを上げて強制リセット
+const CACHE_NAME = 'stem-volume-v1.2'; // バージョンを上げて強制リセット
 const urlsToCache = [
   './',
   './index.html',
