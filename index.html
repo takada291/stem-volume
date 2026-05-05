@@ -21,7 +21,7 @@
     /* テーブルの圧縮 */
     table { width: 100%; border-collapse: collapse; margin-bottom: 8px; background: white; font-size: 0.85rem; }
     th, td { border: 1px solid #dee2e6; padding: 2px 1px; text-align: center; }
-    th { background-color: #e9ecef; white-space: nowrap; font-size: 0.75rem; } /* 1段表示のためフォント縮小 */
+    th { background-color: #e9ecef; white-space: nowrap; font-size: 0.75rem; } 
     input[type="number"]:not(.map-input), select { width: 95%; box-sizing: border-box; padding: 2px; font-size: 0.9rem; height: 26px; }
     
     /* 集計表の圧縮 (2x2レイアウト) */
@@ -58,9 +58,9 @@
   <!-- メイン画面 -->
   <div id="main-view">
     <div class="header-container">
-      <h2>立木材積v1.3</h2>
-      <button class="btn btn-primary" onclick="toggleView('import-view')">直径取込</button>
-      <button class="btn btn-secondary" onclick="toggleView('settings-view')">設定</button>
+      <h2>立木材積 v1.4</h2>
+      <button class="btn btn-primary" onclick="toggleView('import-view')">📡 直径取込</button>
+      <button class="btn btn-secondary" onclick="toggleView('settings-view')">設定 ⚙️</button>
     </div>
 
     <table>
@@ -74,7 +74,7 @@
         </tr>
       </thead>
       <tbody id="tree-list">
-        <!-- JSで15行生成 -->
+        <!-- JSで20行生成 -->
       </tbody>
     </table>
 
@@ -148,7 +148,7 @@
 
   <script>
     /* ==========================================
-       1. メインアプリのロジック (15本対応)
+       1. メインアプリのロジック (20本対応)
        ========================================== */
     const defaultParams = [
       { name: "スギ", A: -4.1921, B: 1.82696, C: 0.99227 },
@@ -156,7 +156,7 @@
       { name: "他針", A: -4.0974, B: 1.871126, C: 0.863667 }
     ];
 
-    const MAX_TREES = 15; // ★15本へ拡張
+    const MAX_TREES = 20; // ★20本へ拡張
     let currentParams;
 
     try {
